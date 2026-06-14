@@ -2,70 +2,27 @@ import {
   cloneElement,
   createContext,
   useContext,
+  useState,
   useEffect,
   useRef,
-  useState,
 } from "react";
 import { createPortal } from "react-dom";
 import { HiXMark } from "react-icons/hi2";
-import styled from "styled-components";
-import { useOutsideClick } from "../hooks/useOutsideClick";
 
-const StyledModal = styled.div`
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background-color: var(--color-grey-0);
-  border-radius: var(--border-radius-lg);
-  box-shadow: var(--shadow-lg);
-  padding: 3.2rem 4rem;
-  transition: all 0.5s;
-`;
-
-const Overlay = styled.div`
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100vh;
-  background-color: var(--backdrop-color);
-  backdrop-filter: blur(4px);
-  z-index: 1000;
-  transition: all 0.5s;
-`;
-
-const Button = styled.button`
-  background: none;
-  border: none;
-  padding: 0.4rem;
-  border-radius: var(--border-radius-sm);
-  transform: translateX(0.8rem);
-  transition: all 0.2s;
-  position: absolute;
-  top: 1.2rem;
-  right: 1.9rem;
-
-  &:hover {
-    background-color: var(--color-grey-100);
-  }
-
-  & svg {
-    width: 2.4rem;
-    height: 2.4rem;
-    /* Sometimes we need both */
-    /* fill: var(--color-grey-500);
-    stroke: var(--color-grey-500); */
-    color: var(--color-grey-500);
-  }
-`;
-
+// Context used to share modal state between
+// Modal, Modal.Open, and Modal.Window
 const ModalContext = createContext();
 
 function Modal({ children }) {
+  // Stores the name of the currently open modal
   const [openName, setOpenName] = useState("");
+
+  // Open a modal by its name
+  const open = (name) => setOpenName(name);
+
+  // Close the currently open modal
   const close = () => setOpenName("");
-  const open = (opens) => setOpenName(opens);
+
   return (
     <ModalContext.Provider value={{ openName, open, close }}>
       {children}
@@ -73,29 +30,101 @@ function Modal({ children }) {
   );
 }
 
+/*
+ * Modal.Open
+ *
+ * Wraps any clickable element and injects
+ * an onClick handler that opens the specified modal.
+ *
+ * Example:
+ * <Modal.Open opens="create-cabin">
+ *   <Button>Add Cabin</Button>
+ * </Modal.Open>
+ */
 function Open({ children, opens }) {
   const { open } = useContext(ModalContext);
-  return cloneElement(children, { onClick: () => open(opens) });
+
+  return cloneElement(children, {
+    onClick: () => open(opens),
+  });
 }
 
-function Window({ children, name }) {
+/*
+ * Modal.Window
+ *
+ * Renders a modal window when its name matches
+ * the currently active modal.
+ *
+ * Uses React Portal so the modal is rendered
+ * outside the normal component hierarchy.
+ */
+function Window({
+  children,
+  name,
+  className = "",
+  overlayClassName = "",
+}) {
   const { openName, close } = useContext(ModalContext);
-  const ref = useOutsideClick(close);
+
+  // Reference to the modal element
+  const modalRef = useRef(null);
+
+  // Close the modal when the user clicks outside it
+  useEffect(() => {
+    function handleClick(e) {
+      if (
+        modalRef.current &&
+        !modalRef.current.contains(e.target)
+      ) {
+        close();
+      }
+    }
+
+    document.addEventListener("mousedown", handleClick);
+
+    return () => {
+      document.removeEventListener(
+        "mousedown",
+        handleClick
+      );
+    };
+  }, [close]);
+
+  // Don't render if this modal isn't active
   if (name !== openName) return null;
 
   return createPortal(
-    <Overlay>
-      <StyledModal ref={ref}>
-        <Button onClick={close}>
-          <HiXMark />
-        </Button>
-        <div>{cloneElement(children, { handleCloseModal: close })}</div>
-      </StyledModal>
-    </Overlay>,
-    document.body,
+    <div className={overlayClassName}>
+      <div ref={modalRef} className={className}>
+        {/* Modal close button */}
+        <button
+          onClick={close}
+          style={{
+            position: "absolute",
+            top: "12px",
+            right: "16px",
+            border: "none",
+            background: "none",
+            cursor: "pointer",
+          }}
+        >
+          <HiXMark size={24} />
+        </button>
+
+        {/*
+          Inject the close function into the child component.
+          Useful when forms need to close the modal after submit.
+        */}
+        {cloneElement(children, {
+          handleCloseModal: close,
+        })}
+      </div>
+    </div>,
+    document.body
   );
 }
 
+// Compound Component API
 Modal.Open = Open;
 Modal.Window = Window;
 
